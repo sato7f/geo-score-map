@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>GeoGuessr 得点計算支援ツール</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet/dist/leaflet.css"
+        />
+        <style>
+            body,
+            html {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+            #controls {
+                padding: 10px;
+                background: #f0f0f0;
+            }
+            #map {
+                flex: 1;
+            }
+            button {
+                gap: 10px;
+            }
+            .btn {
+                padding: 10px 20px;
+                font-size: 16px;
+                background-color: #eee;
+                color: #333;
+                border: 2px solid #333;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: 0.3s;
+            }
+            .btn.active {
+                background-color: #4caf50;
+                color: white;
+                border-color: #4caf50;
+            }
+            .delete-link {
+                color: blue;
+                text-decoration: underline;
+                cursor: pointer;
+            }
+            .popup-text {
+                color: rgb(30, 30, 30);
+                font-family: sans-serif;
+                line-height:1.3em;
+            }
+            .score {
+                font-size: 2em;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- <div id="controls">
+            <label
+                ><input type="radio" name="mode" value="answer" checked />
+                正解地点を設定</label
+            >
+            <label
+                ><input type="radio" name="mode" value="guess" />
+                推測地点を登録</label
+            >
+        </div> -->
+        <div id="controls">
+            <button class="btn active" value="answer">正解地点を登録</button>
+            <button class="btn" value="guess">推測地点を登録</button>
+        </div>
+
+        <div id="map"></div>
+
+        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+        <script>
+            let mode = "answer"; // 'answer' または 'guess'
+            let answerMarker = null;
+            let answerCircles = [];
+            let guessMarkers = [];
+
+            const m = 40075 * 1000; // 地球の円周 (m)
+            const distance5k = 200; // 5kになる正解地点との距離 (m)（計算式通りだと0ｍになるため手動で設定）
+
+            const map = L.map("map").setView([20, 0], 2); // ズームアウトして世界全体を表示
+
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: "&copy; OpenStreetMap contributors",
+            }).addTo(map);
+
+            const buttons = document.querySelectorAll(".btn");
+            buttons.forEach((button) => {
+                button.addEventListener("click", function () {
+                    mode = this.value;
+                    updateButtonState();
+                });
+            });
+
+            function updateButtonState() {
+                buttons.forEach((button) => {
+                    if (button.value === mode) {
+                        button.classList.add("active");
+                    } else {
+                        button.classList.remove("active");
+                    }
+                });
+            }
+            //
+
+            map.on("click", (e) => {
+                if (mode === "answer") {
+                    setAnswer(e.latlng);
+                } else {
+                    registerGuess(e.latlng);
+                }
+            });
+
+            function setAnswer(latlng) {
+                // 古い正解地点や円を削除
+                if (answerMarker) {
+                    map.removeLayer(answerMarker);
+                }
+                answerCircles.forEach((c) => map.removeLayer(c));
+                answerCircles = [];
+
+                answerMarker = L.marker(latlng)
+                    .addTo(map)
+                    .bindPopup("正解地点")
+                    .openPopup();
+
+                // 1000点刻みで円を描く（5000点〜1000点）
+                for (let score = 5000; score >= 1000; score -= 1000) {
+                    const radius = calcRadius(score);
+                    const circle = L.circle(latlng, {
+                        radius: radius,
+                        color: `hsl(${((360 / 5) * score) / 1000}, 50%, 50%)`, //"blue",
+                        fillOpacity: 0.03,
+                        fillRule: "evenodd",
+                    }).addTo(map);
+                    answerCircles.push(circle);
+                }
+
+                // 推測地点もリセット
+                guessMarkers.forEach((g) => map.removeLayer(g));
+                guessMarkers = [];
+            }
+
+            function registerGuess(latlng) {
+                // 正解地点がない場合推測地点は置けないようにする
+                if (!answerMarker) {
+                    alert("まず正解地点を設定してください");
+                    return;
+                }
+
+                // マーカーオブジェクト
+                const marker = L.marker(latlng).addTo(map);
+                // 距離 (m)
+                const distance = latlng.distanceTo(answerMarker.getLatLng());
+                // 点数
+                const score = calcScore(distance);
+
+                // ポップアップの中身
+                const popup = L.popup().setContent(
+                    `<div class="popup-text">点数: <span class="score">${score}</span>点<br>距離: ${(
+                        distance / 1000
+                    ).toFixed(
+                        2
+                    )} km<br><span class="delete-link">この地点を削除</span></div>`
+                );
+
+                // マーカーにポップアップを紐づける
+                marker.bindPopup(popup);
+
+                marker.on("popupopen", function (e) {
+                    // このポップアップのDOMを取得
+                    const popupElement = e.popup.getElement();
+                    // その中から探す
+                    const link = popupElement.querySelector(".delete-link");
+
+                    // リンクをクリックしたときの処理
+                    link.addEventListener("click", () => {
+                        map.removeLayer(marker);
+                        guessMarkers = guessMarkers.filter((m) => m !== marker);
+                    });
+                });
+
+                marker.openPopup();
+                guessMarkers.push(marker);
+            }
+
+            function calcRadius(score) {
+                if (score === 5000) return distance5k; // 5000点はぴったり正解
+                return -(m / 10) * Math.log(score / 5000);
+            }
+
+            function calcScore(distance) {
+                if (distance <= distance5k) return 5000; // ほぼ完全一致
+                const ratio = Math.exp((-10 * distance) / m);
+                const score = Math.floor(5000 * ratio);
+                return Math.max(0, Math.min(5000, score));
+            }
+        </script>
+    </body>
+</html>
