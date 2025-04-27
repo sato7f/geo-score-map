@@ -70,24 +70,30 @@
 
         <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
         <script>
-            let mode = "answer"; // 'answer' または 'guess'
+            // ピンのモード切り替え用変数　'answer' または 'guess'
+            let mode = "answer";
+            // 正解地点の配列
             let answerMarkers = [];
             // answerMarkersに入れるオブジェクトを一旦格納するオブジェクト
             let answerMarker = null;
+            // 正解地点からの円の配列
             let answerCircles = [];
+            // 推測地点の配列
             let guessMarkers = [];
 
             // const m = 40075 * 1000; // 地球の円周 (m)
             const m = 18525 * 1000; // ACW用の値
             // const m = 17409 * 1000; // AOW用の値
 
-            const distance5k = 200; // 5kになる正解地点との距離 (m)（計算式通りだと0ｍになるため手動で設定）
-            const map = L.map("map").setView([20, 0], 2); // ズームアウトして世界全体を表示
-
+            // 5kになる正解地点との距離 (m)（計算式通りだと0ｍになるため手動で設定）
+            const distance5k = 200;
+            // ズームアウトして世界全体を表示
+            const map = L.map("map").setView([20, 0], 2);
             L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 attribution: "&copy; OpenStreetMap contributors",
             }).addTo(map);
 
+            // ボタンオブジェクト
             const buttons = document.querySelectorAll(".btn");
             buttons.forEach((button) => {
                 button.addEventListener("click", function () {
@@ -105,8 +111,8 @@
                     }
                 });
             }
-            //
 
+            // マップをクリックしたときの処理
             map.on("click", (e) => {
                 if (mode === "answer") {
                     setAnswer(e.latlng);
@@ -140,7 +146,6 @@
                 let _latlng;
                 [-360, 360, 0].forEach((lngOffset) => {
                     _latlng = { lat: latlng.lat, lng: latlng.lng + lngOffset };
-                    // console.log(latlng + ", " + latlng.lat + ", " + latlng.lng);
                     answerMarker = L.marker(_latlng, { icon: redIcon })
                         .addTo(map)
                         .bindPopup("正解地点");
@@ -159,6 +164,7 @@
                             radius = calcRadius(score);
                         }
                         console.log("score:" + score + ", radius:" + radius);
+                        // 円のオブジェクトを構成してマップに追加
                         const circle = L.circle(_latlng, {
                             radius: radius,
                             color: `hsl(${
@@ -167,6 +173,7 @@
                             fillOpacity: 0.03,
                             fillRule: "evenodd",
                         }).addTo(map);
+                        // 正解配列の地点の配列に追加
                         answerCircles.push(circle);
                     }
                 });
@@ -179,9 +186,7 @@
             function registerGuess(latlng) {
                 // 正解地点がない場合推測地点は置けないようにする
                 if (answerMarkers.length == 0) {
-                    alert(
-                        "まず正解地点を設定してください" + answerMarkers.length
-                    );
+                    alert("まず正解地点を設定してください");
                     return;
                 }
 
@@ -217,18 +222,21 @@
                     });
                 });
 
+                // クリックしたらポップアップを開く
                 marker.openPopup();
                 guessMarkers.push(marker);
             }
 
             function calcRadius(score) {
-                if (score === 5000) return distance5k; // 5000点はぴったり正解
+                // 5000点なら設定した値を返す
+                if (score === 5000) return distance5k;
                 return -(m / 10) * Math.log(score / 5000);
             }
 
-            // distance (m)
+            // distanceはメートル単位
             function calcScore(distance) {
-                if (distance <= distance5k) return 5000; // ほぼ完全一致
+                // 設定した値以下の距離なら5000点
+                if (distance <= distance5k) return 5000;
                 const ratio = Math.exp((-10 * distance) / m);
                 const score = Math.round(5000 * ratio);
                 console.log(
